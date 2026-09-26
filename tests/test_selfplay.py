@@ -122,3 +122,16 @@ def test_train_writes_levels_and_passport(tmp_path):
     assert [p["games"] for p in saved["curve"]] == [200, 400]
     assert {"vs_random", "vs_bot"} <= set(saved["curve"][0])
     assert saved["method"]["lambda"] is not None
+
+
+def test_worst_case_finds_a_loss_of_an_untrained_net():
+    model = net.ValueNet(3, rng=np.random.default_rng(0))
+    assert selfplay.worst_case(model, rules.X) == -1
+    assert selfplay.worst_case(model, rules.O) == -1
+
+
+def test_recheck_rewrites_the_same_checks(tmp_path):
+    _, passport = selfplay.train(3, games=200, seed=2, snapshots={}, eval_every=0, final_games=10,
+                                 out_dir=tmp_path, log=None)
+    again = selfplay.recheck(3, tmp_path, final_games=10, log=None)
+    assert again["levels"][0]["checks"] == json.loads(json.dumps(passport["levels"][0]["checks"]))

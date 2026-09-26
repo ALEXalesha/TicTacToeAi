@@ -145,6 +145,28 @@ def rate(res):
             "win_rate": round(res["wins"] / max(games, 1), 4)}
 
 
+def worst_case(model, me, n=3):
+    """Худший исход для сети цвета me против любого соперника: сеть ходит своим ходом,
+    за соперника перебираются все ходы. 1 - сеть всегда выигрывает, 0 - в худшем случае
+    ничья, -1 - есть партия, где сеть проигрывает. Только для 3x3 - там дерево маленькое."""
+    player = net.NetPlayer(model)
+    memo = {}
+
+    def go(board):
+        key = board.tobytes()
+        if key not in memo:
+            result = rules.outcome(board)
+            if result is not None:
+                memo[key] = result * me
+            elif rules.to_move(board) == me:
+                memo[key] = go(rules.play(board, player.move(board)))
+            else:
+                memo[key] = min(go(rules.play(board, c)) for c in rules.legal_moves(board))
+        return memo[key]
+
+    return go(rules.new_board(n))
+
+
 def evaluate(model, n, games, seed=0, full=True):
     """Проверка сети против ботов. Сеть ходит без случайности; сиды фиксированы, поэтому
     паспорт можно пересчитать и сверить."""
@@ -156,6 +178,7 @@ def evaluate(model, n, games, seed=0, full=True):
         checks["vs_random_first"] = rate(bots.match(player, bots.RandomBot(rng), n, games, colors="x"))
         if n == 3:
             checks["vs_minimax"] = rate(bots.match(player, bots.MinimaxBot(rng), n, games))
+            checks["worst_case"] = {"as_x": worst_case(model, rules.X), "as_o": worst_case(model, rules.O)}
     return checks
 
 
@@ -240,7 +263,8 @@ def train(n, games, seed=0, snapshots=None, batch_games=64, lam=0.7, gamma=0.95,
                  "file": f"{n}x{n}-{key}.npz", "checks": checks}
         passport["levels"].append(entry)
         say(f"{LEVEL_NAMES[key]:8s} ({at} партий): " + ", ".join(
-            f"{name} {c['wins']}/{c['draws']}/{c['losses']}" for name, c in checks.items()))
+            f"{name} {c['wins']}/{c['draws']}/{c['losses']}" if "wins" in c else f"{name} {c}"
+            for name, c in checks.items()))
         if out_dir is not None:
             Path(out_dir).mkdir(parents=True, exist_ok=True)
             level_model.save(Path(out_dir) / entry["file"])
@@ -259,13 +283,30 @@ def restore_arrays(model, arrays):
         p[...] = a
 
 
+def recheck(n, out_dir, final_games=200, log=print):
+    """Заново проверить сохранённые уровни и переписать итоги в паспорте - без обучения.
+    Проверка та же, что в конце train, с теми же сидами."""
+    path = Path(out_dir) / f"{n}x{n}.json"
+    passport = json.loads(path.read_text(encoding="utf-8"))
+    for lv in passport["levels"]:
+        lv["checks"] = evaluate(net.ValueNet.load(Path(out_dir) / lv["file"]), n, final_games, seed=1000 + n)
+        if log:
+            log(f"{lv['name']}: {lv['checks']}")
+    path.write_text(json.dumps(passport, ensure_ascii=False, indent=1), encoding="utf-8")
+    return passport
+
+
 def main():
     ap = argparse.ArgumentParser(description="Обучение сети крестиков-ноликов самоигрой")
     ap.add_argument("--size", type=int, choices=(3, 5), required=True)
     ap.add_argument("--games", type=int, help="сколько партий (по умолчанию - из PRESETS)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models"))
+    ap.add_argument("--recheck", action="store_true", help="не учить, а заново проверить уровни в --out")
     args = ap.parse_args()
+    if args.recheck:
+        recheck(args.size, args.out)
+        return
     p = dict(PRESETS[args.size])
     games = args.games or p.pop("games")
     p.pop("games", None)
