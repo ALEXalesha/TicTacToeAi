@@ -1,0 +1,31 @@
+import os
+import sys
+
+# Без экрана: Qt рисует в память. Ставится до любого импорта Qt.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+for var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(var, "4")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _own_data_dir(tmp_path, monkeypatch):
+    """Каждый тест пишет настройки, статистику и место окна в свою временную папку,
+    а не в профиль игрока."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("TICTACTOEAI_HOME", str(home))
+    return home
+
+
+_app = None
+
+
+@pytest.fixture
+def qapp():
+    """Одно QApplication на весь прогон: второе Qt создать не даст."""
+    global _app
+    from PySide6.QtWidgets import QApplication
+    _app = QApplication.instance() or QApplication([])
+    return _app
