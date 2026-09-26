@@ -85,8 +85,7 @@ def test_game_goes_to_the_end_and_is_recorded_once(model3, tmp_path):
 
 def test_winning_line_is_known_after_a_win(model3):
     s = make(model3)
-    # человек ставит X в верхнюю строку, сеть ходит куда хочет; если сеть заняла клетку -
-    # партия всё равно доигрывается, линия проверяется только при победе X
+    # случайная партия: линия есть ровно тогда, когда кто-то выиграл
     rng = np.random.default_rng(3)
     play_out(s, rng)
     if s.result in (1, -1):
