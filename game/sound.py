@@ -4,6 +4,7 @@
 Нет звуковой карты или QtMultimedia - игра молчит, но работает.
 """
 import io
+import os
 import wave
 from pathlib import Path
 
@@ -88,6 +89,8 @@ class Sounds:
                 (folder / f"{name}.wav").write_bytes(to_wav(synth(name)))
         except OSError:
             return
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            return      # тесты, самопроверка, кадры README: без экрана - и без звука в колонках
         try:
             from PySide6.QtCore import QUrl
             from PySide6.QtMultimedia import QSoundEffect

@@ -1,13 +1,16 @@
 import os
 import sys
 
-# Без экрана: Qt рисует в память. Ставится до любого импорта Qt.
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 for var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(var, "4")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
+
+import offscreen  # noqa: E402
+
+# Без экрана: Qt рисует в память. Ставится до любого импорта Qt.
+offscreen.setup()
 
 
 @pytest.fixture(autouse=True)
