@@ -78,7 +78,7 @@ Retrain: `python -m train.selfplay --size 3` (or `--size 5`). Headless self-chec
 python -m pytest
 ```
 
-199 tests, about 30 seconds: layer gradients, rules on both boards, symmetries, TD(λ) targets, the trained models against their passports, and the whole window driven without a screen (Qt offscreen). A mutation check broke the code on purpose eight times - win rule, gradients, saving statistics, the network's move choice, the training target - and the tests went red every time.
+204 tests, about 30 seconds: layer gradients, rules on both boards, symmetries, TD(λ) targets, the trained models against their passports, and the whole window driven without a screen (Qt offscreen). A mutation check broke the code on purpose eight times - win rule, gradients, saving statistics, the network's move choice, the training target - and the tests went red every time.
 
 ## Stack
 

@@ -201,8 +201,9 @@ class GamePage(Page):
         self.status = label("", "status")
         col.addWidget(self.status)
         self.substatus = label("", "muted", wrap=True)
-        # высота строк постоянная: текст меняется по ходу партии, а панель не должна прыгать
-        self.substatus.setFixedHeight(40)
+        # не меньше двух строк: текст меняется по ходу партии, а панель не должна прыгать.
+        # Но и не больше нельзя: фиксированная высота обрезала перенесённый текст (26.09).
+        self.substatus.setMinimumHeight(40)
         self.substatus.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         col.addWidget(self.substatus)
         col.addSpacing(4)
@@ -223,7 +224,7 @@ class GamePage(Page):
             self.score_labels[key] = num
         col.addLayout(score)
         self.score_caption = label("", "hint", wrap=True)
-        self.score_caption.setFixedHeight(18)
+        self.score_caption.setMinimumHeight(18)
         self.score_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         col.addWidget(self.score_caption)
         col.addSpacing(4)
@@ -243,7 +244,9 @@ class GamePage(Page):
         col.addWidget(self.again_button)
         col.addWidget(self.menu_button)
         self.keys_hint = label("", "hint", wrap=True)
-        self.keys_hint.setFixedHeight(18)
+        # Высота - от текста: на настоящем экране фраза шире, чем в offscreen, переносится
+        # на вторую строку, и высота в одну строку её обрезала (Алексей, 26.09.2026).
+        self.keys_hint.setMinimumHeight(18)
         self.keys_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         col.addWidget(self.keys_hint)
         root.addWidget(side)

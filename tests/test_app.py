@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QLabel
 
 import paths
 from game import app as app_module
@@ -222,3 +223,43 @@ def test_mark_drawn_where_clicked(win):
     center = board.cell_rect(2, 2).center().toPoint()
     assert image.pixelColor(center).name() == theme.palette(win.settings.theme)["x"]
     assert image.pixelColor(QPoint(3, 3)).name() != theme.palette(win.settings.theme)["x"]
+
+
+# Закон: подпись с переносом строк не ограничена по высоте и помещается целиком. Нашёл
+# Алексей 26.09.2026 на своём экране: подсказка клавиш под «В меню» была обрезана сверху и
+# снизу. Ей дали высоту ровно в одну строку (18 px), а на настоящем экране фраза чуть шире,
+# чем в offscreen, - перенеслась на вторую строку и не влезла. Шрифт крупнее на 10%
+# изображает этот «чуть шире».
+QWIDGETSIZE_MAX = 16777215
+
+
+def wrapped_labels(widget):
+    return [lb for lb in widget.findChildren(QLabel) if lb.wordWrap() and lb.isVisible() and lb.text()]
+
+
+def test_wrapping_labels_are_never_capped_in_height(win):
+    for name in ("menu", "game", "stats", "settings"):
+        win.show_page(name)
+        QTest.qWait(10)
+        capped = [lb.text() for lb in wrapped_labels(win) if lb.maximumHeight() < QWIDGETSIZE_MAX]
+        assert capped == [], (name, capped)
+
+
+@pytest.mark.parametrize("size", [3, 5])
+@pytest.mark.parametrize("scale", [1.0, 1.1])
+def test_game_panel_text_fits_at_minimum_window_size(qapp, size, scale):
+    """Шрифт на 10% крупнее - «текст на настоящем экране шире, чем в offscreen»."""
+    w = app_module.MainWindow()
+    w.show()
+    w.show_page("game")
+    w.game.set_size(size)
+    qapp.processEvents()
+    for lb in w.game.findChildren(QLabel):
+        px = lb.font().pixelSize() if lb.font().pixelSize() > 0 else round(lb.font().pointSizeF() * 96 / 72)
+        lb.setStyleSheet(f"font-size: {round(px * scale)}px;")
+    w.resize(w.minimumSize())
+    QTest.qWait(30)
+    clipped = [(lb.text(), lb.height(), lb.heightForWidth(lb.width())) for lb in wrapped_labels(w.game)
+               if lb.heightForWidth(lb.width()) > lb.height()]
+    w.close()
+    assert clipped == []
