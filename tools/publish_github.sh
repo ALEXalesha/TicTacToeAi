@@ -17,10 +17,9 @@ REPO=ALEXalesha/TicTacToeAi
 # её открытым текстом на первой же странице.
 PRIVATE_EMAIL="$(git config user.email)"
 PUBLIC_EMAIL=203467574+ALEXalesha@users.noreply.github.com
-# Второе, чего не должно быть в открытом репозитории: адрес домашнего Gitea. Он лежит
-# в плане и спецификации из docs/superpowers, в строчке про remote origin. И он тоже
-# берётся из настроек, а не пишется строкой: в первой версии скрипт нашёл адрес в
-# самом себе и переписал собственную замену в бессмысленную gitea.local -> gitea.local.
+# Второе, чего не должно быть в открытом репозитории: адрес домашнего Gitea. Сейчас его
+# в истории нет, а страж ниже следит, чтобы и не появился. Берётся он из настроек, а не
+# пишется строкой: строкой скрипт однажды нашёл адрес в самом себе.
 LAN_GITEA="$(git remote get-url origin | sed -E 's#^[a-z]+://([^/]+)/.*#\1#')"
 PUBLIC_GITEA='gitea.local'
 TAG="${1:-}"
@@ -42,8 +41,10 @@ git update-ref -d refs/original/refs/heads/github-main 2>/dev/null || true
 # именно так адрес однажды и уехал на GitHub внутри самого скрипта публикации. Правится
 # только то, где он действительно встречается: блобы этих путей переписываются прямо в
 # индексе, без выгрузки дерева на диск.
+# `|| true`: без совпадений git grep возвращает 1, и при pipefail скрипт молча
+# обрывался бы здесь - так и было в репозитории, где личного в файлах нет вовсе.
 DIRTY=$(git grep -I -l -E "$PRIVATE_EMAIL|$LAN_GITEA" $(git rev-list github-main) -- 2>/dev/null \
-        | sed 's/^[^:]*://' | sort -u | tr '\n' ' ')
+        | sed 's/^[^:]*://' | sort -u | tr '\n' ' ' || true)
 if [ -n "$DIRTY" ]; then
   echo "личное в файлах: $DIRTY- переписываю содержимое"
   FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --index-filter "
