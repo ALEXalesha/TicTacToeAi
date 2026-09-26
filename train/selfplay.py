@@ -270,7 +270,7 @@ def train(n, games, seed=0, snapshots=None, batch_games=64, lam=0.7, gamma=0.95,
             level_model.save(Path(out_dir) / entry["file"])
     if out_dir is not None:
         path = Path(out_dir) / f"{n}x{n}.json"
-        path.write_text(json.dumps(passport, ensure_ascii=False, indent=1), encoding="utf-8")
+        path.write_text(json.dumps(passport, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
     return model, passport
 
 
@@ -292,7 +292,7 @@ def recheck(n, out_dir, final_games=200, log=print):
         lv["checks"] = evaluate(net.ValueNet.load(Path(out_dir) / lv["file"]), n, final_games, seed=1000 + n)
         if log:
             log(f"{lv['name']}: {lv['checks']}")
-    path.write_text(json.dumps(passport, ensure_ascii=False, indent=1), encoding="utf-8")
+    path.write_text(json.dumps(passport, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
     return passport
 
 
