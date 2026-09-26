@@ -70,6 +70,24 @@ def run_pyinstaller(console=False):
     subprocess.run(args, check=True, cwd=ROOT)
 
 
+def trim(folder):
+    """Убрать из сборки то, что PyInstaller кладёт на всякий случай, а игре не нужно:
+    программный OpenGL (окно рисуется без OpenGL), переводы Qt кроме русского, чтение PDF.
+    Возвращает, сколько байт освободилось."""
+    qt = os.path.join(folder, "_internal", "PySide6")
+    doomed = [os.path.join(qt, "opengl32sw.dll"), os.path.join(qt, "Qt6Pdf.dll"),
+              os.path.join(qt, "plugins", "imageformats", "qpdf.dll")]
+    translations = os.path.join(qt, "translations")
+    if os.path.isdir(translations):
+        doomed += [os.path.join(translations, n) for n in os.listdir(translations) if not n.endswith("_ru.qm")]
+    freed = 0
+    for path in doomed:
+        if os.path.isfile(path):
+            freed += os.path.getsize(path)
+            os.remove(path)
+    return freed
+
+
 def make_portable(folder=None):
     folder = folder or os.path.join(ROOT, DIST, APP)
     with open(os.path.join(folder, "portable.txt"), "w", encoding="utf-8") as f:
@@ -121,6 +139,8 @@ def main():
     make_icon(os.path.join(ROOT, ICON))
     print("PyInstaller...")
     run_pyinstaller(args.console)
+    freed = trim(os.path.join(ROOT, DIST, APP))
+    print(f"убрано лишнее: {freed / 1e6:.0f} МБ")
     print("portable-архив...")
     archive = make_portable()
 

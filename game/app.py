@@ -517,11 +517,12 @@ class StatsPage(Page):
         kind = ("плотная сеть 18 → {h} → {h} → 1".format(h=net["hidden"]) if net["kind"] == "dense" else
                 "свёртки 3×3 (2 → " + " → ".join([str(net["channels"])] * net["conv_layers"]) + ")"
                 + (f", плотный слой {net['head']} → 1" if net.get("head") else " → 1"))
-        minutes = max(1, round(pp["train_seconds"] / 60))
+        sec = pp["train_seconds"]
+        took = f"{round(sec)} с" if sec < 90 else f"{round(sec / 60)} мин"
         self.learn_caption.setText(
             f"Поле {FIELD_NAMES[self.field]}, {FIELD_RULES[self.field]}. Сеть: {kind}, "
             f"{number(net['parameters'])} весов. Она сыграла сама с собой {number(pp['games'])} партий "
-            f"за {minutes} мин; ни одной стратегии ей не давали. "
+            f"за {took}; ни одной стратегии ей не давали. "
             "Линии - доля побед сети по ходу обучения, пунктир - где сняты уровни.")
         self.checks.setRowCount(len(pp["levels"]))
         minimax = self.field == 3

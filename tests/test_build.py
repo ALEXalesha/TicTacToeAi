@@ -42,3 +42,17 @@ def test_icon_is_drawn_in_every_size(tmp_path, qapp):
     path = build.make_icon(str(tmp_path / "icon.ico"))
     with Image.open(path) as ico:
         assert {(16, 16), (32, 32), (256, 256)} <= set(ico.info["sizes"])
+
+
+def test_trim_removes_only_what_the_game_does_not_need(tmp_path):
+    qt = tmp_path / "_internal" / "PySide6"
+    (qt / "translations").mkdir(parents=True)
+    (qt / "plugins" / "imageformats").mkdir(parents=True)
+    keep = [qt / "Qt6Core.dll", qt / "translations" / "qtbase_ru.qm", qt / "plugins" / "imageformats" / "qico.dll"]
+    gone = [qt / "opengl32sw.dll", qt / "Qt6Pdf.dll", qt / "translations" / "qtbase_de.qm",
+            qt / "plugins" / "imageformats" / "qpdf.dll"]
+    for p in keep + gone:
+        p.write_bytes(b"12345")
+    assert build.trim(str(tmp_path)) == 5 * len(gone)
+    assert all(p.exists() for p in keep)
+    assert not any(p.exists() for p in gone)
