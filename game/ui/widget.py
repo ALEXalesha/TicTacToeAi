@@ -1,40 +1,37 @@
-"""Окно игры: меню, партия, статистика, настройки. Интерфейс на русском."""
+"""Виджет игры: меню, партия, статистика, настройки - страницы в одном QStackedWidget.
+
+Своего главного окна у игры нет (контракт PythonAiGames): виджет встаёт во вкладку
+оболочки или в окно отдельного запуска (aikit.make_window, main.py).
+
+- тема, язык и громкость - из ctx и меняются на лету по ctx.changed; сменённые в настройках
+  игры уходят в ctx, а оттуда - в оболочку и остальные игры;
+- файлы - только в ctx.data_dir: settings.json (своё), stats.json (ctx.stats), звуки;
+- pause()/resume(): ход сети ждёт в QTimer.singleShot с номером (token); увеличенный token
+  отменяет его, resume() заново запускает ход, если он за сетью;
+- shutdown(): потоков у игры нет - отменить ход сети и сохранить настройки.
+"""
 import os
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QFrame,
-                               QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-                               QPushButton, QScrollArea, QSlider, QStackedWidget,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QGridLayout, QHBoxLayout, QHeaderView, QLabel, QPushButton,
+                               QScrollArea, QSlider, QStackedWidget, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
-import paths
-from core import rules
-from game import models, theme
-from game.board_widget import BoardWidget
-from game.chart import CurveChart
-from game.icon import app_icon
-from game.session import Session
-from game.settings import Settings
-from game.sound import Sounds
-from game.stats import Stats
+from game.ai import models
+from game.core import rules
+from game.session import Session, stats_key
+from game.ui import theme
+from game.ui.board_widget import BoardWidget
+from game.ui.chart import CurveChart
+from game.ui.i18n import LANG_NAMES, number, plural_key, translator
+from game.ui.settings import Settings
+from game.ui.sound import Sounds
 from game.version import VERSION
-from game.window_state import WindowMemory
 
-TITLE = "Крестики-нолики с нейросетью"
-FIRST_NAMES = {"me": "Я", "net": "Сеть", "alternate": "По очереди"}
+FIRST = ("me", "net", "alternate")
 FIELD_NAMES = {3: "3×3", 5: "5×5"}
-FIELD_RULES = {3: "три в ряд", 5: "четыре в ряд"}
-WINDOW_OPTS = {"width": 1000, "height": 700, "minWidth": 780, "minHeight": 560}
-
-
-def plural(n, one, few, many):
-    n = abs(n)
-    if n % 10 == 1 and n % 100 != 11:
-        return one
-    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return few
-    return many
 
 
 def label(text, name=None, wrap=False):
@@ -73,6 +70,9 @@ class Page(QWidget):
     def on_show(self):
         self.setFocus()
 
+    def retranslate(self, t):
+        pass
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape and self.window_.current_page() != "menu":
             self.window_.show_page("menu")
@@ -108,10 +108,9 @@ class Logo(QWidget):
     def __init__(self):
         super().__init__()
         self.setFixedSize(150, 150)
-        self.colors = theme.palette("dark")
 
     def paintEvent(self, event):
-        from game.icon import render
+        from game.ui.icon import render
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.drawImage(QRectF(0, 0, self.width(), self.height()), render(300))
@@ -129,24 +128,36 @@ class MenuPage(Page):
         logo = Logo()
         col.addWidget(logo, 0, Qt.AlignmentFlag.AlignHCenter)
         col.addSpacing(8)
-        title = label("Крестики-нолики", "title")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        col.addWidget(title)
-        sub = label("против нейросети, которая научилась играть сама", "muted")
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        col.addWidget(sub)
+        self.title = label("", "title")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        col.addWidget(self.title)
+        self.sub = label("", "muted")
+        self.sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        col.addWidget(self.sub)
         col.addSpacing(22)
-        self.play_button = button("Играть", "menuPrimary", lambda: window.start_play())
-        self.stats_button = button("Статистика", "menu", lambda: window.show_page("stats"))
-        self.settings_button = button("Настройки", "menu", lambda: window.show_page("settings"))
-        self.quit_button = button("Выход", "menu", window.close)
+        self.play_button = button("", "menuPrimary", lambda: window.start_play())
+        self.stats_button = button("", "menu", lambda: window.show_page("stats"))
+        self.settings_button = button("", "menu", lambda: window.show_page("settings"))
+        self.quit_button = button("", "menu", window.quit)
+        # «Выход» - только в окне отдельного запуска (main.py включает его через allow_quit):
+        # во вкладке оболочки игру закрывает крестик вкладки
+        self.quit_button.setVisible(False)
         for b in (self.play_button, self.stats_button, self.settings_button, self.quit_button):
             col.addWidget(b, 0, Qt.AlignmentFlag.AlignHCenter)
         outer.addLayout(col)
         outer.addStretch(4)
-        foot = label(f"версия {VERSION} · поля 3×3 и 5×5 · сеть на numpy, без готовых библиотек", "hint")
-        foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        outer.addWidget(foot)
+        self.foot = label("", "hint")
+        self.foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outer.addWidget(self.foot)
+
+    def retranslate(self, t):
+        self.title.setText(t("title"))
+        self.sub.setText(t("subtitle"))
+        self.play_button.setText(t("play"))
+        self.stats_button.setText(t("stats"))
+        self.settings_button.setText(t("settings"))
+        self.quit_button.setText(t("quit"))
+        self.foot.setText(t("footer", version=VERSION))
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
@@ -179,19 +190,22 @@ class GamePage(Page):
         col.setContentsMargins(18, 16, 18, 16)
         col.setSpacing(6)
 
-        col.addWidget(label("Поле", "muted"))
-        box, self.size_buttons = segmented({3: "3×3", 5: "5×5"}, self.set_size)
+        self.field_caption = label("", "muted")
+        col.addWidget(self.field_caption)
+        box, self.size_buttons = segmented(FIELD_NAMES, self.set_size)
         col.addWidget(box)
         col.addSpacing(4)
-        col.addWidget(label("Уровень сети", "muted"))
-        box, self.level_buttons = segmented(dict(models.LEVEL_NAMES), self.set_level)
+        self.level_caption = label("", "muted")
+        col.addWidget(self.level_caption)
+        box, self.level_buttons = segmented({lv: lv for lv in models.LEVELS}, self.set_level)
         col.addWidget(box)
         col.addSpacing(4)
-        col.addWidget(label("Первый ход", "muted"))
+        self.first_caption = label("", "muted")
+        col.addWidget(self.first_caption)
         self.first_combo = QComboBox()
         self.first_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for key, text in FIRST_NAMES.items():
-            self.first_combo.addItem(text, key)
+        for key in FIRST:
+            self.first_combo.addItem(key, key)
         self.first_combo.currentIndexChanged.connect(
             lambda i: self.set_first(self.first_combo.itemData(i)))
         col.addWidget(self.first_combo)
@@ -211,17 +225,19 @@ class GamePage(Page):
         score = QHBoxLayout()
         score.setSpacing(6)
         self.score_labels = {}
-        for key, text in (("wins", "победы"), ("draws", "ничьи"), ("losses", "поражения")):
+        self.score_caps = {}
+        for key in ("wins", "draws", "losses"):
             cell = QVBoxLayout()
             cell.setSpacing(0)
             num = label("0", "bigNumber")
             num.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cap = label(text, "hint")
+            cap = label("", "hint")
             cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cell.addWidget(num)
             cell.addWidget(cap)
             score.addLayout(cell)
             self.score_labels[key] = num
+            self.score_caps[key] = cap
         col.addLayout(score)
         self.score_caption = label("", "hint", wrap=True)
         self.score_caption.setMinimumHeight(18)
@@ -229,18 +245,17 @@ class GamePage(Page):
         col.addWidget(self.score_caption)
         col.addSpacing(4)
 
-        self.thoughts_box = QCheckBox("Мысли сети")
+        self.thoughts_box = QCheckBox()
         self.thoughts_box.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.thoughts_box.setChecked(s.show_thoughts)
         self.thoughts_box.toggled.connect(lambda on: window.change_setting("show_thoughts", on))
         col.addWidget(self.thoughts_box)
-        self.thoughts_hint = label("Оценка клеток для того, чья очередь: +1 - победа, −1 - поражение",
-                                   "hint", wrap=True)
+        self.thoughts_hint = label("", "hint", wrap=True)
         col.addWidget(self.thoughts_hint)
         col.addStretch(1)
 
-        self.again_button = button("Ещё раз", "primary", self.again)
-        self.menu_button = button("В меню", None, lambda: window.show_page("menu"))
+        self.again_button = button("", "primary", self.again)
+        self.menu_button = button("", None, lambda: window.show_page("menu"))
         col.addWidget(self.again_button)
         col.addWidget(self.menu_button)
         self.keys_hint = label("", "hint", wrap=True)
@@ -252,13 +267,29 @@ class GamePage(Page):
         root.addWidget(side)
         self.sync_controls()
 
+    def retranslate(self, t):
+        self.field_caption.setText(t("field"))
+        self.level_caption.setText(t("net_level"))
+        self.first_caption.setText(t("first_move"))
+        for level, b in self.level_buttons.items():
+            b.setText(t("level_" + level))
+        for i, key in enumerate(FIRST):
+            self.first_combo.setItemText(i, t("first_" + key))
+        for key, cap in self.score_caps.items():
+            cap.setText(t(key + "_small"))
+        self.thoughts_box.setText(t("thoughts"))
+        self.thoughts_hint.setText(t("thoughts_hint"))
+        self.again_button.setText(t("again"))
+        self.menu_button.setText(t("to_menu"))
+        self.refresh()
+
     # --- выбор партии ---
 
     def sync_controls(self):
         self.size_buttons[self.size].setChecked(True)
         self.level_buttons[self.level].setChecked(True)
         self.first_combo.blockSignals(True)
-        self.first_combo.setCurrentIndex(list(FIRST_NAMES).index(self.first))
+        self.first_combo.setCurrentIndex(FIRST.index(self.first))
         self.first_combo.blockSignals(False)
 
     def set_size(self, size):
@@ -277,9 +308,8 @@ class GamePage(Page):
 
     def new_session(self):
         self.sync_controls()
-        w = self.window_
         self.session = Session(self.size, self.level, models.load(self.size, self.level), first=self.first,
-                               stats=w.stats, stats_path=w.stats_path)
+                               stats=self.window_.stats)
         self.after_change()
 
     def again(self):
@@ -308,16 +338,16 @@ class GamePage(Page):
     def after_move(self):
         s = self.session
         if s.result is None:
-            self.window_.sounds.play("x" if s.board[s.last] == rules.X else "o")
+            self.window_.play_sound("x" if s.board[s.last] == rules.X else "o")
         else:
-            self.window_.sounds.play(s.outcome_for_human())
+            self.window_.play_sound(s.outcome_for_human())
         self.after_change()
 
     def after_change(self):
         self.token += 1
         self.refresh()
         s = self.session
-        if s.result is None and not s.human_turn():
+        if s.result is None and not s.human_turn() and not self.window_.paused and not self.window_.closed:
             token = self.token
             QTimer.singleShot(self.window_.settings.delay_ms, lambda: self.net_turn(token))
 
@@ -334,37 +364,32 @@ class GamePage(Page):
         s = self.session
         if s is None:
             return
+        t = self.window_.t
         show = self.window_.settings.show_thoughts
         self.board_widget.set_state(s.board, s.line, s.last, s.thoughts() if show and s.result is None else None,
                                     interactive=s.human_turn())
-        mark = "крестиками (X)" if s.human == rules.X else "ноликами (O)"
+        mark = t("mark_x") if s.human == rules.X else t("mark_o")
+        level = t("level_" + s.level)
         outcome = s.outcome_for_human()
         if outcome is None:
             self.status.setObjectName("status")
-            self.status.setText("Ваш ход" if s.human_turn() else "Сеть думает…")
-            self.substatus.setText(f"Вы играете {mark}, нужно {FIELD_RULES[s.size]}. "
-                                   f"Сеть: {models.LEVEL_NAMES[s.level]}.")
+            self.status.setText(t("your_move") if s.human_turn() else t("net_thinks"))
+            self.substatus.setText(t("playing", mark=mark, rule=t(f"rule_{s.size}"), level=level))
         else:
-            names = {"win": ("Победа!", "statusWin"), "loss": ("Поражение", "statusLoss"),
-                     "draw": ("Ничья", "statusDraw")}
-            text, obj = names[outcome]
-            self.status.setObjectName(obj)
-            self.status.setText(text)
-            tail = {"win": "Вы обыграли сеть.", "loss": "Сеть собрала линию.",
-                    "draw": "Поле заполнено, линии нет ни у кого."}[outcome]
-            self.substatus.setText(f"{tail} Вы играли {mark}.")
+            self.status.setObjectName({"win": "statusWin", "loss": "statusLoss", "draw": "statusDraw"}[outcome])
+            self.status.setText(t(outcome))
+            self.substatus.setText(t("played", tail=t("tail_" + outcome), mark=mark))
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
-        e = self.window_.stats.entry(s.size, s.level)
+        e = self.window_.stats.entry(stats_key(s.size, s.level))
         for key, w in self.score_labels.items():
             w.setText(str(e[key]))
         streak = e["streak"]
+        word = t(plural_key(e["games"], self.window_.ctx.lang))
         self.score_caption.setText(
-            f"{FIELD_NAMES[s.size]}, {models.LEVEL_NAMES[s.level]}: {e['games']} "
-            f"{plural(e['games'], 'партия', 'партии', 'партий')}"
-            + (f", серия побед {streak}" if streak > 1 else ""))
-        self.keys_hint.setText("Мышь или цифры 1–9 · R - ещё раз · Esc - меню" if s.size == 3
-                               else "Ход мышью · R - ещё раз · Esc - меню")
+            t("score_caption", field=FIELD_NAMES[s.size], level=level, games=e["games"], word=word)
+            + (t("streak", streak=streak) if streak > 1 else ""))
+        self.keys_hint.setText(t("keys_3") if s.size == 3 else t("keys_5"))
         self.thoughts_box.blockSignals(True)
         self.thoughts_box.setChecked(show)
         self.thoughts_box.blockSignals(False)
@@ -376,9 +401,9 @@ class GamePage(Page):
 # --- статистика ---
 
 
-def table(headers):
-    t = QTableWidget(0, len(headers))
-    t.setHorizontalHeaderLabels(headers)
+def table(columns):
+    t = QTableWidget(0, len(columns))
+    t.setHorizontalHeaderLabels(columns)
     t.verticalHeader().setVisible(False)
     t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     t.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -407,13 +432,13 @@ def item(text, align=Qt.AlignmentFlag.AlignCenter, color=None):
     return it
 
 
-def number(n):
-    """12345 -> '12 345': разряды через неразрывный пробел, как принято по-русски."""
-    return f"{n:,}".replace(",", " ")
-
-
 def check_text(c):
     return f"{round(100 * c['win_rate'])}%   {c['wins']} / {c['draws']} / {c['losses']}"
+
+
+TABLE_COLUMNS = ("col_field_level", "col_games", "col_wins", "col_losses", "col_draws", "col_streak",
+                 "col_best")
+CHECK_COLUMNS = ("col_level", "col_train_games", "col_vs_random", "col_vs_bot", "col_vs_minimax")
 
 
 class StatsPage(Page):
@@ -435,9 +460,11 @@ class StatsPage(Page):
         col.setSpacing(16)
 
         top = QHBoxLayout()
-        top.addWidget(label("Статистика", "heading"))
+        self.heading = label("", "heading")
+        top.addWidget(self.heading)
         top.addStretch(1)
-        top.addWidget(button("В меню", None, lambda: window.show_page("menu")))
+        self.menu_button = button("", None, lambda: window.show_page("menu"))
+        top.addWidget(self.menu_button)
         col.addLayout(top)
 
         # ваши партии
@@ -445,23 +472,25 @@ class StatsPage(Page):
         mc = QVBoxLayout(mine)
         mc.setContentsMargins(20, 16, 20, 16)
         mc.setSpacing(10)
-        mc.addWidget(label("Ваши партии", "section"))
+        self.mine_title = label("", "section")
+        mc.addWidget(self.mine_title)
         totals = QHBoxLayout()
         self.total_labels = {}
-        for key, text in (("games", "партий"), ("wins", "побед"), ("draws", "ничьих"),
-                          ("losses", "поражений"), ("best_streak", "лучшая серия побед")):
+        self.total_caps = {}
+        for key, name in (("games", "total_games"), ("wins", "total_wins"), ("draws", "total_draws"),
+                          ("losses", "total_losses"), ("best_streak", "total_best")):
             cell = QVBoxLayout()
             cell.setSpacing(0)
             num = label("0", "bigNumber")
-            cap = label(text, "hint")
+            cap = label("", "hint")
             cell.addWidget(num)
             cell.addWidget(cap)
             totals.addLayout(cell)
             self.total_labels[key] = num
+            self.total_caps[name] = cap
         totals.addStretch(1)
         mc.addLayout(totals)
-        self.table = table(["Поле и уровень сети", "Партии", "Победы", "Поражения", "Ничьи",
-                            "Серия", "Лучшая серия"])
+        self.table = table(TABLE_COLUMNS)
         mc.addWidget(self.table)
         col.addWidget(mine)
 
@@ -471,23 +500,37 @@ class StatsPage(Page):
         lc.setContentsMargins(20, 16, 20, 16)
         lc.setSpacing(10)
         head = QHBoxLayout()
-        head.addWidget(label("Как сеть училась", "section"))
+        self.learn_title = label("", "section")
+        head.addWidget(self.learn_title)
         head.addStretch(1)
-        box, self.field_buttons = segmented({3: "3×3", 5: "5×5"}, self.set_field)
+        box, self.field_buttons = segmented(FIELD_NAMES, self.set_field)
         head.addWidget(box)
         lc.addLayout(head)
         self.learn_caption = label("", "muted", wrap=True)
         lc.addWidget(self.learn_caption)
         self.chart = CurveChart()
         lc.addWidget(self.chart)
-        lc.addWidget(label("Проверки сети", "section"))
-        self.checks = table(["Уровень", "Партий обучения", "Против случайного", "Против бота",
-                             "Против минимакса"])
+        self.checks_title = label("", "section")
+        lc.addWidget(self.checks_title)
+        self.checks = table(CHECK_COLUMNS)
         lc.addWidget(self.checks)
         self.checks_caption = label("", "hint", wrap=True)
         lc.addWidget(self.checks_caption)
         col.addWidget(learn)
         col.addStretch(1)
+
+    def retranslate(self, t):
+        self.heading.setText(t("stats"))
+        self.menu_button.setText(t("to_menu"))
+        self.mine_title.setText(t("your_games"))
+        for name, cap in self.total_caps.items():
+            cap.setText(t(name))
+        self.table.setHorizontalHeaderLabels([t(c) for c in TABLE_COLUMNS])
+        self.learn_title.setText(t("how_learned"))
+        self.checks_title.setText(t("net_checks"))
+        self.checks.setHorizontalHeaderLabels([t(c) for c in CHECK_COLUMNS])
+        self.chart.set_lang(self.window_.ctx.lang)
+        self.refresh()
 
     def on_show(self):
         super().on_show()
@@ -498,6 +541,8 @@ class StatsPage(Page):
         self.refresh()
 
     def refresh(self):
+        t = self.window_.t
+        lang = self.window_.ctx.lang
         stats = self.window_.stats
         tot = stats.totals()
         for key, w in self.total_labels.items():
@@ -505,8 +550,8 @@ class StatsPage(Page):
         rows = [(size, level) for size in (3, 5) for level in models.LEVELS]
         self.table.setRowCount(len(rows))
         for r, (size, level) in enumerate(rows):
-            e = stats.entry(size, level)
-            self.table.setItem(r, 0, item(f"{FIELD_NAMES[size]} · {models.LEVEL_NAMES[level]}",
+            e = stats.entry(stats_key(size, level))
+            self.table.setItem(r, 0, item(f"{FIELD_NAMES[size]} · {t('level_' + level)}",
                                           Qt.AlignmentFlag.AlignLeft))
             for c, key in enumerate(("games", "wins", "losses", "draws", "streak", "best_streak"), start=1):
                 self.table.setItem(r, c, item(str(e[key])))
@@ -514,26 +559,26 @@ class StatsPage(Page):
 
         self.field_buttons[self.field].setChecked(True)
         pp = models.passport(self.field)
-        marks = [(lv["games"], lv["name"]) for lv in pp["levels"] if lv["key"] != "strong"]
+        marks = [(lv["games"], t("level_" + lv["key"])) for lv in pp["levels"] if lv["key"] != "strong"]
         self.chart.set_data(pp["curve"], marks)
         net = pp["network"]
-        kind = ("плотная сеть 18 → {h} → {h} → 1".format(h=net["hidden"]) if net["kind"] == "dense" else
-                "свёртки 3×3 (2 → " + " → ".join([str(net["channels"])] * net["conv_layers"]) + ")"
-                + (f", плотный слой {net['head']} → 1" if net.get("head") else " → 1"))
+        if net["kind"] == "dense":
+            kind = t("kind_dense", h=net["hidden"])
+        else:
+            kind = (t("kind_conv", layers=" → ".join([str(net["channels"])] * net["conv_layers"]))
+                    + (t("kind_head", head=net["head"]) if net.get("head") else " → 1"))
         sec = pp["train_seconds"]
-        took = f"{round(sec)} с" if sec < 90 else f"{round(sec / 60)} мин"
-        self.learn_caption.setText(
-            f"Поле {FIELD_NAMES[self.field]}, {FIELD_RULES[self.field]}. Сеть: {kind}, "
-            f"{number(net['parameters'])} весов. Она сыграла сама с собой {number(pp['games'])} партий "
-            f"за {took}; ни одной стратегии ей не давали. "
-            "Линии - доля побед сети по ходу обучения, пунктир - где сняты уровни.")
+        took = t("seconds", n=round(sec)) if sec < 90 else t("minutes", n=round(sec / 60))
+        self.learn_caption.setText(t(
+            "learn_caption", field=FIELD_NAMES[self.field], rule=t(f"rule_{self.field}"), kind=kind,
+            params=number(net["parameters"], lang), games=number(pp["games"], lang), took=took))
         self.checks.setRowCount(len(pp["levels"]))
         minimax = self.field == 3
         self.checks.setColumnHidden(4, not minimax)
         for r, lv in enumerate(pp["levels"]):
             ch = lv["checks"]
-            self.checks.setItem(r, 0, item(lv["name"], Qt.AlignmentFlag.AlignLeft))
-            self.checks.setItem(r, 1, item(number(lv["games"])))
+            self.checks.setItem(r, 0, item(t("level_" + lv["key"]), Qt.AlignmentFlag.AlignLeft))
+            self.checks.setItem(r, 1, item(number(lv["games"], lang)))
             self.checks.setItem(r, 2, item(check_text(ch["vs_random"])))
             self.checks.setItem(r, 3, item(check_text(ch["vs_bot"])))
             if minimax:
@@ -542,15 +587,13 @@ class StatsPage(Page):
                 self.checks.setItem(r, 4, item(check_text(mm), color=good))
         fit_height(self.checks)
         games = pp["levels"][-1]["checks"]["vs_random"]["games"]
-        text = (f"По {games} партий на проверку, половину сеть ходит первой. Числа: доля побед, "
-                "затем победы / ничьи / поражения. Бот «выиграй или помешай» смотрит на ход вперёд.")
+        text = t("checks_caption", games=games)
         if minimax:
-            text += " Минимакс перебирает всю игру и не проигрывает никогда."
-            safe = [lv["name"] for lv in pp["levels"]
+            text += t("minimax_caption")
+            safe = [t("quote").format(t("level_" + lv["key"])) for lv in pp["levels"]
                     if min(lv["checks"].get("worst_case", {"x": -1}).values()) >= 0]
             if safe:
-                text += (" Полным перебором всех ходов соперника проверено: уровень «"
-                         + "», «".join(safe) + "» не проигрывает никому, ни крестиками, ни ноликами.")
+                text += t("safe_caption", names=", ".join(safe))
         self.checks_caption.setText(text)
 
     def apply_theme(self, name):
@@ -563,16 +606,24 @@ class StatsPage(Page):
 
 
 class SettingsPage(Page):
+    ROWS = (("volume", "volume", "volume_hint"), ("theme", "theme", "theme_hint"),
+            ("language", "language", "language_hint"), ("delay", "delay", "delay_hint"),
+            ("thoughts", "thoughts_title", "thoughts_settings_hint"),
+            ("first", "default_first", "default_first_hint"))
+
     def __init__(self, window):
         super().__init__(window)
         s = window.settings
+        ctx = window.ctx
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 24, 28, 24)
         outer.setSpacing(16)
         top = QHBoxLayout()
-        top.addWidget(label("Настройки", "heading"))
+        self.heading = label("", "heading")
+        top.addWidget(self.heading)
         top.addStretch(1)
-        top.addWidget(button("В меню", None, lambda: window.show_page("menu")))
+        self.menu_button = button("", None, lambda: window.show_page("menu"))
+        top.addWidget(self.menu_button)
         outer.addLayout(top)
 
         box = card()
@@ -582,12 +633,15 @@ class SettingsPage(Page):
         grid.setHorizontalSpacing(24)
         grid.setVerticalSpacing(18)
         grid.setColumnStretch(1, 1)
+        self.row_labels = {}
 
-        def row(r, title, hint, widget, extra=None):
+        def row(r, key, widget, extra=None):
             names = QVBoxLayout()
             names.setSpacing(2)
-            names.addWidget(label(title, "section"))
-            names.addWidget(label(hint, "hint", wrap=True))
+            title, hint = label("", "section"), label("", "hint", wrap=True)
+            self.row_labels[key] = (title, hint)
+            names.addWidget(title)
+            names.addWidget(hint)
             grid.addLayout(names, r, 0)
             line = QHBoxLayout()
             line.addWidget(widget, 1)
@@ -595,56 +649,81 @@ class SettingsPage(Page):
                 line.addWidget(extra)
             grid.addLayout(line, r, 1)
 
+        volume = ctx.sound.volume
         self.volume = QSlider(Qt.Orientation.Horizontal)
         self.volume.setRange(0, 100)
-        self.volume.setValue(s.volume)
-        self.volume_label = label(f"{s.volume}%")
+        self.volume.setValue(volume)
+        self.volume_label = label(f"{volume}%")
         self.volume_label.setMinimumWidth(56)
         self.volume.valueChanged.connect(self.on_volume)
-        row(0, "Громкость", "Звуки ходов и конца партии", self.volume, self.volume_label)
+        row(0, "volume", self.volume, self.volume_label)
 
         self.theme_combo = QComboBox()
-        for key, text in theme.THEME_NAMES.items():
-            self.theme_combo.addItem(text, key)
-        self.theme_combo.setCurrentIndex(list(theme.THEME_NAMES).index(s.theme))
-        self.theme_combo.currentIndexChanged.connect(
-            lambda i: window.change_setting("theme", self.theme_combo.itemData(i)))
-        row(1, "Тема", "Тёмная или светлая", self.theme_combo)
+        for key in theme.THEME_NAMES:
+            self.theme_combo.addItem(key, key)
+        self.theme_combo.setCurrentIndex(list(theme.THEME_NAMES).index(ctx.theme))
+        self.theme_combo.currentIndexChanged.connect(lambda i: ctx.set_theme(self.theme_combo.itemData(i)))
+        row(1, "theme", self.theme_combo)
+
+        self.lang_combo = QComboBox()
+        for key, text in LANG_NAMES.items():
+            self.lang_combo.addItem(text, key)
+        self.lang_combo.setCurrentIndex(list(LANG_NAMES).index(ctx.lang))
+        self.lang_combo.currentIndexChanged.connect(lambda i: ctx.set_lang(self.lang_combo.itemData(i)))
+        row(2, "language", self.lang_combo)
 
         self.delay = QSlider(Qt.Orientation.Horizontal)
         self.delay.setRange(0, 2000)
         self.delay.setSingleStep(50)
         self.delay.setPageStep(250)
         self.delay.setValue(s.delay_ms)
-        self.delay_label = label(self.delay_text(s.delay_ms))
+        self.delay_label = label("")
         self.delay_label.setMinimumWidth(56)
         self.delay.valueChanged.connect(self.on_delay)
-        row(2, "Задержка хода сети", "Пауза перед ходом, чтобы его было видно", self.delay, self.delay_label)
+        row(3, "delay", self.delay, self.delay_label)
 
-        self.thoughts = QCheckBox("Показывать")
+        self.thoughts = QCheckBox()
         self.thoughts.setChecked(s.show_thoughts)
         self.thoughts.toggled.connect(lambda on: window.change_setting("show_thoughts", on))
-        row(3, "Мысли сети", "Оценка каждой свободной клетки цветом и числом", self.thoughts)
+        row(4, "thoughts", self.thoughts)
 
         self.first_combo = QComboBox()
-        for key, text in FIRST_NAMES.items():
-            self.first_combo.addItem(text, key)
-        self.first_combo.setCurrentIndex(list(FIRST_NAMES).index(s.first))
+        for key in FIRST:
+            self.first_combo.addItem(key, key)
+        self.first_combo.setCurrentIndex(FIRST.index(s.first))
         self.first_combo.currentIndexChanged.connect(
             lambda i: window.change_setting("first", self.first_combo.itemData(i)))
-        row(4, "Первый ход по умолчанию", "Кто ходит первым, когда нажато «Играть»", self.first_combo)
+        row(5, "first", self.first_combo)
 
         outer.addWidget(box)
-        outer.addWidget(label("Всё сохраняется сразу.", "hint"))
+        self.saved_hint = label("", "hint")
+        outer.addWidget(self.saved_hint)
         outer.addStretch(1)
 
-    @staticmethod
-    def delay_text(ms):
-        return f"{ms / 1000:.2f} с".replace(".", ",")
+    def retranslate(self, t):
+        self.heading.setText(t("settings"))
+        self.menu_button.setText(t("to_menu"))
+        for key, title_key, hint_key in self.ROWS:
+            title, hint = self.row_labels[key]
+            title.setText(t(title_key))
+            hint.setText(t(hint_key))
+        for i, key in enumerate(theme.THEME_NAMES):
+            self.theme_combo.setItemText(i, t("theme_" + key))
+        for i, key in enumerate(FIRST):
+            self.first_combo.setItemText(i, t("first_" + key))
+        self.thoughts.setText(t("show"))
+        self.saved_hint.setText(t("saved_at_once"))
+        self.delay_label.setText(self.delay_text(self.window_.settings.delay_ms))
+
+    def delay_text(self, ms):
+        s = f"{ms / 1000:.2f}"
+        if self.window_.ctx.lang == "ru":
+            s = s.replace(".", ",")
+        return self.window_.t("delay_value", s=s)
 
     def on_volume(self, v):
         self.volume_label.setText(f"{v}%")
-        self.window_.change_setting("volume", v)
+        self.window_.set_volume(v)
 
     def on_delay(self, v):
         v = int(round(v / 50) * 50)
@@ -653,11 +732,12 @@ class SettingsPage(Page):
 
     def sync(self):
         s = self.window_.settings
-        for w, value in ((self.volume, s.volume), (self.delay, s.delay_ms)):
+        volume = self.window_.ctx.sound.volume
+        for w, value in ((self.volume, volume), (self.delay, s.delay_ms)):
             w.blockSignals(True)
             w.setValue(value)
             w.blockSignals(False)
-        self.volume_label.setText(f"{s.volume}%")
+        self.volume_label.setText(f"{volume}%")
         self.delay_label.setText(self.delay_text(s.delay_ms))
         self.thoughts.blockSignals(True)
         self.thoughts.setChecked(s.show_thoughts)
@@ -670,29 +750,38 @@ class SettingsPage(Page):
 
     def sync_combos(self):
         s = self.window_.settings
-        for combo, keys, value in ((self.theme_combo, list(theme.THEME_NAMES), s.theme),
-                                   (self.first_combo, list(FIRST_NAMES), s.first)):
+        ctx = self.window_.ctx
+        for combo, keys, value in ((self.theme_combo, list(theme.THEME_NAMES), ctx.theme),
+                                   (self.lang_combo, list(LANG_NAMES), ctx.lang),
+                                   (self.first_combo, list(FIRST), s.first)):
             combo.blockSignals(True)
             combo.setCurrentIndex(keys.index(value))
             combo.blockSignals(False)
 
 
-# --- окно ---
+# --- виджет игры ---
 
 
-class MainWindow(QMainWindow):
-    def __init__(self):
+class GameWidget(QWidget):
+    def __init__(self, ctx):
         super().__init__()
-        self.setWindowTitle(TITLE)
-        self.setWindowIcon(app_icon())
-        self.settings_path = paths.user_file("settings.json")
-        self.stats_path = paths.user_file("stats.json")
+        self.ctx = ctx
+        self.t = translator(ctx.lang)
+        self.paused = False
+        self.closed = False
+        self._quit = None
+        self.setObjectName("gameRoot")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.settings_path = ctx.file("settings.json")
         self.settings = Settings.load(self.settings_path)
-        self.stats = Stats.load(self.stats_path)
-        self.sounds = Sounds(os.path.join(paths.data_dir(), "sounds"), self.settings.volume)
+        self.stats = ctx.stats
+        # свои звуки (крестик, нолик, итог партии) - в своей подпапке: в sounds/ пишет ctx.sound
+        self.sounds = Sounds(os.path.join(ctx.data_dir, "game-sounds"), ctx.sound.volume)
 
         self.stack = QStackedWidget()
-        self.setCentralWidget(self.stack)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.stack)
         self.menu = MenuPage(self)
         self.game = GamePage(self)
         self.stats_page = StatsPage(self)
@@ -701,19 +790,16 @@ class MainWindow(QMainWindow):
                       "settings": self.settings_page}
         for page in self.pages.values():
             self.stack.addWidget(page)
-        self.apply_theme(self.settings.theme)
+        self.apply_theme(ctx.theme)
         self.game.new_session()
-        # меньше, чем нужно панели партии, окно не сжимается: иначе строки налезают друг на
-        # друга. Размер известен только после стилей - шрифты и отступы задаёт тема.
-        need = self.stack.minimumSizeHint()
-        self.window_opts = {**WINDOW_OPTS, "minWidth": max(WINDOW_OPTS["minWidth"], need.width()),
-                            "minHeight": max(WINDOW_OPTS["minHeight"], need.height())}
-        self.setMinimumSize(self.window_opts["minWidth"], self.window_opts["minHeight"])
-        self.memory = WindowMemory(self, paths.user_file("window.json"), self.window_opts)
+        self.retranslate()
         self.show_page("menu")
+        ctx.changed.connect(self.on_ctx_changed)
+
+    # --- страницы ---
 
     def colors(self):
-        return theme.palette(self.settings.theme)
+        return theme.palette(self.ctx.theme)
 
     def current_page(self):
         current = self.stack.currentWidget()
@@ -734,15 +820,42 @@ class MainWindow(QMainWindow):
         self.game.on_show()
         self.game.new_session()
 
+    def allow_quit(self, slot):
+        """Окно отдельного запуска: показать «Выход» в меню; slot закрывает окно."""
+        self._quit = slot
+        self.menu.quit_button.setVisible(True)
+
+    def quit(self):
+        if self._quit is not None:
+            self._quit()
+
+    # --- настройки ---
+
     def change_setting(self, name, value):
         setattr(self.settings, name, value)
         self.settings.save(self.settings_path)
-        if name == "theme":
-            self.apply_theme(value)
-        elif name == "volume":
-            self.sounds.set_volume(value)
-        elif name == "show_thoughts":
+        if name == "show_thoughts":
             self.game.refresh()
+
+    def set_volume(self, value):
+        self.ctx.set_volume(value)
+        self.sounds.set_volume(value)
+
+    def play_sound(self, name):
+        # громкость общая и в оболочке меняется без сигнала - сверяется перед звуком
+        if self.sounds.volume != self.ctx.sound.volume:
+            self.sounds.set_volume(self.ctx.sound.volume)
+        self.sounds.play(name)
+
+    # --- тема и язык на лету ---
+
+    def on_ctx_changed(self, what):
+        if what == "theme":
+            self.apply_theme(self.ctx.theme)
+        elif what == "lang":
+            self.t = translator(self.ctx.lang)
+            self.retranslate()
+        self.settings_page.sync_combos()
 
     def apply_theme(self, name):
         self.setStyleSheet(theme.qss(name))
@@ -750,27 +863,24 @@ class MainWindow(QMainWindow):
             if hasattr(page, "apply_theme"):
                 page.apply_theme(name)
 
-    # место окна
-    def moveEvent(self, event):
-        super().moveEvent(event)
-        self.memory.track() if hasattr(self, "memory") else None
+    def retranslate(self):
+        for page in self.pages.values():
+            page.retranslate(self.t)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.memory.track() if hasattr(self, "memory") else None
+    # --- жизнь во вкладке оболочки ---
 
-    def closeEvent(self, event):
+    def pause(self):
+        self.paused = True
+        self.game.token += 1               # ход сети, ждущий в таймере, отменён
+
+    def resume(self):
+        self.paused = False
+        if self.game.session is not None and self.current_page() == "game":
+            self.game.after_change()       # снова запустит ход, если он за сетью
+
+    def shutdown(self):
+        """Потоков у игры нет: отменить ход сети и сохранить настройки. True - всё остановлено."""
+        self.closed = True
         self.game.token += 1
-        self.memory.save()
         self.settings.save(self.settings_path)
-        super().closeEvent(event)
-
-
-def run(argv=None):
-    from PySide6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication(argv or [])
-    app.setApplicationName("TicTacToeAi")
-    app.setWindowIcon(app_icon())
-    window = MainWindow()
-    window.memory.show()
-    return app.exec()
+        return True

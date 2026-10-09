@@ -34,15 +34,15 @@ def version():
 
 
 def make_icon(path=ICON):
-    """Иконка рисуется тем же кодом, что в окне (game/icon.py), и собирается в .ico."""
+    """Иконка рисуется тем же кодом, что в окне (game/ui/icon.py), и собирается в .ico."""
     sys.path.insert(0, ROOT)
-    import offscreen
+    from aikit import offscreen
     offscreen.setup(force=True)
     from PIL import Image
     from PySide6.QtCore import QBuffer, QIODevice
     from PySide6.QtGui import QGuiApplication
 
-    from game.icon import render
+    from game.ui.icon import render
 
     app = QGuiApplication.instance() or QGuiApplication([])  # noqa: F841 - нужен живым для QImage
     buf = QBuffer()
@@ -58,7 +58,8 @@ def make_icon(path=ICON):
 def run_pyinstaller(console=False):
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
             "--name", APP, "--icon", os.path.join(ROOT, ICON),
-            "--add-data", f"{os.path.join(ROOT, 'models')}{os.pathsep}models",
+            "--add-data", f"{os.path.join(ROOT, 'game', 'models')}{os.pathsep}game/models",
+            "--add-data", f"{os.path.join(ROOT, 'aikit', 'VERSION')}{os.pathsep}aikit",
             "--paths", ROOT,
             "--distpath", os.path.join(ROOT, DIST),
             "--workpath", os.path.join(ROOT, BUILD, "work"),

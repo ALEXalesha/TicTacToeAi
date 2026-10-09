@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from core import bots, net, rules
+from game.ai import net
+from game.core import bots, rules
 from tests.test_rules import board_from
 
 

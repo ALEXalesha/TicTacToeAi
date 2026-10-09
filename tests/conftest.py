@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-import offscreen  # noqa: E402
+from aikit import offscreen  # noqa: E402
 
 # Без экрана: Qt рисует в память. Ставится до любого импорта Qt.
 offscreen.setup()

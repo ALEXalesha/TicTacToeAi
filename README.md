@@ -10,11 +10,11 @@
 [![Release](https://img.shields.io/github/v/release/ALEXalesha/TicTacToeAi?color=16a34a)](https://github.com/ALEXalesha/TicTacToeAi/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-<img src="docs/preview_thoughts.png" width="880" alt="A 3x3 game with the network's thoughts shown in every free cell">
+<img src="docs/preview_thoughts_en.png" width="880" alt="A 3x3 game with the network's thoughts shown in every free cell">
 
 </div>
 
-> **The interface is in Russian**, and so is the long write-up - [README.ru.md](README.ru.md), which this file summarises. In the screenshot, "Ваш ход" means "your move", "Мысли сети" is the switch that shows the network's thoughts, and "Ещё раз" / "В меню" are "play again" / "back to menu".
+> **The interface speaks English and Russian** (Settings → Language, switches on the fly). The long write-up is in Russian - [README.ru.md](README.ru.md), which this file summarises.
 
 ## Two boards, three levels
 
@@ -57,7 +57,7 @@ Self-play, 64 games at a time, with a share of random moves falling from 30 % to
 
 Moving first against a random player, the strong 3×3 network wins 98.5 %. On 5×5 the "win or block" bot always blocks a single threat, so beating it takes a fork - two threats at once. The strong network learned that on its own and wins 91.5 % of those games.
 
-All numbers are stored in the model passports `models/3x3.json` and `models/5x5.json`, together with the learning curve; the tests recompute every check with the same seeds and compare game for game.
+All numbers are stored in the model passports `game/models/3x3.json` and `game/models/5x5.json`, together with the learning curve; the tests recompute every check with the same seeds and compare game for game.
 
 ## Running it
 
@@ -70,7 +70,20 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Retrain: `python -m train.selfplay --size 3` (or `--size 5`). Headless self-check: `python main.py --selftest result.txt`. Build: `python build.py` (needs PyInstaller, Pillow and NSIS).
+Retrain: `python -m game.train.selfplay --size 3` (or `--size 5`). Headless self-check: `python main.py --selftest result.txt`. Build: `python build.py` (needs PyInstaller, Pillow and NSIS).
+
+## Part of AiGameRoom
+
+Since 1.1.0 the game follows the [PythonAiGames contract](https://github.com/ALEXalesha/AiGameRoom): everything game-specific lives in `game/`, and `game/__init__.py` exports `GAME_INFO` and `create_widget(ctx)`. The game has no main window of its own: `python main.py` puts the widget into a small standalone window (`aikit.make_window`), and the AiGameRoom shell puts the very same widget into a tab. Theme, language and volume come from `ctx` and change on the fly; files are written only to `ctx.data_dir` (`%APPDATA%\TicTacToeAi\tictactoe` for the standalone game). Settings and statistics of 1.0.x (`%LOCALAPPDATA%\TicTacToeAi`) are copied over on the first start; the old files stay where they were.
+
+| Folder | What it does |
+|---|---|
+| `game/core/` | rules and test bots, no Qt |
+| `game/ai/` | the value network, symmetries, loading trained models |
+| `game/train/` | self-play training |
+| `game/ui/` | the Qt widget: pages, board, chart, themes, sounds, English and Russian strings |
+| `game/models/` | trained weights and passports |
+| `aikit/` | shared kit of all AiGameRoom games: numpy layers, context, standalone window, settings, statistics, window state |
 
 ## Tests
 
@@ -78,7 +91,7 @@ Retrain: `python -m train.selfplay --size 3` (or `--size 5`). Headless self-chec
 python -m pytest
 ```
 
-204 tests, about 30 seconds: layer gradients, rules on both boards, symmetries, TD(λ) targets, the trained models against their passports, and the whole window driven without a screen (Qt offscreen). A mutation check broke the code on purpose eight times - win rule, gradients, saving statistics, the network's move choice, the training target - and the tests went red every time.
+271 tests (180 of the game and 91 of the shared `aikit` kit), about four minutes: layer gradients, rules on both boards, symmetries, TD(λ) targets, the trained models against their passports, the whole window driven without a screen (Qt offscreen), and the contract entry point - the widget made the way the shell makes it, theme and language switched on the fly, pause/resume/shutdown, files written only to the data folder, every page in English with no Russian left. A mutation check broke the code on purpose eight times - win rule, gradients, saving statistics, the network's move choice, the training target - and the tests went red every time.
 
 ## Stack
 

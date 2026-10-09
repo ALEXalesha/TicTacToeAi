@@ -1,9 +1,10 @@
 import numpy as np
 import pytest
 
-from core import net, rules
-from game.session import Session
-from game.stats import Stats
+from game.ai import net
+from game.core import rules
+from game.session import Session, stats_key
+from aikit.stats import Stats
 
 
 @pytest.fixture
@@ -11,8 +12,8 @@ def model3():
     return net.ValueNet(3, rng=np.random.default_rng(0))
 
 
-def make(model, first="me", stats=None, path=None, size=3):
-    return Session(size, "strong", model, first=first, stats=stats or Stats(), stats_path=path)
+def make(model, first="me", stats=None, size=3):
+    return Session(size, "strong", model, first=first, stats=stats or Stats())
 
 
 def play_out(s, rng):
@@ -67,20 +68,20 @@ def test_net_cannot_move_on_the_humans_turn(model3):
 
 
 def test_game_goes_to_the_end_and_is_recorded_once(model3, tmp_path):
-    stats = Stats()
     path = tmp_path / "stats.json"
-    s = make(model3, stats=stats, path=path)
+    stats = Stats(path)
+    s = make(model3, stats=stats)
     play_out(s, np.random.default_rng(2))
     assert s.result is not None
     assert s.outcome_for_human() in ("win", "loss", "draw")
-    assert stats.entry(3, "strong")["games"] == 1
+    assert stats.entry(stats_key(3, "strong"))["games"] == 1
     # после конца партии ходы не проходят и статистика не растёт
     empty = rules.legal_moves(s.board)
     if empty:
         assert not s.human_move(empty[0])
     s.finish()
-    assert stats.entry(3, "strong")["games"] == 1
-    assert Stats.load(path).entry(3, "strong")["games"] == 1
+    assert stats.entry(stats_key(3, "strong"))["games"] == 1
+    assert Stats(path).entry(stats_key(3, "strong"))["games"] == 1
 
 
 def test_winning_line_is_known_after_a_win(model3):

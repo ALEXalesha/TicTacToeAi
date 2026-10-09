@@ -2,7 +2,7 @@
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
 
-from game import theme
+from game.ui import theme
 
 
 def render(size=256):

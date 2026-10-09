@@ -1,44 +1,9 @@
 import numpy as np
 import pytest
 
-from nn import io, layers, losses
-from nn.optim import Adam
-
-
-def numeric_grad(f, x, eps=1e-3):
-    """Центральная разность по каждому элементу x (x меняется на месте и возвращается)."""
-    g = np.zeros_like(x, dtype=np.float64)
-    it = np.nditer(x, flags=["multi_index"])
-    for _ in it:
-        i = it.multi_index
-        old = x[i]
-        x[i] = old + eps
-        up = f()
-        x[i] = old - eps
-        down = f()
-        x[i] = old
-        g[i] = (up - down) / (2 * eps)
-    return g
-
-
-def check_layer(layer, x, rng):
-    """Сравнивает backward слоя с численным градиентом по входу и по всем весам.
-    Потеря - сумма выхода с случайными коэффициентами, чтобы градиенты были разными."""
-    y = layer.forward(x)
-    coef = rng.normal(size=y.shape)
-
-    def loss():
-        return float((layer.forward(x) * coef).sum())
-
-    layer.forward(x)
-    dx = layer.backward(coef)
-    assert dx.shape == x.shape
-    np.testing.assert_allclose(dx, numeric_grad(loss, x), rtol=1e-4, atol=1e-6)
-    layer.forward(x)
-    layer.backward(coef)
-    for name, p, grad in layer.params():
-        expected = numeric_grad(loss, p)
-        np.testing.assert_allclose(grad, expected, rtol=1e-4, atol=1e-6, err_msg=name)
+from aikit.nn import io, layers, losses
+from aikit.nn.gradcheck import check_layer, numeric_grad
+from aikit.nn.optim import Adam
 
 
 @pytest.fixture
@@ -157,7 +122,7 @@ def test_save_and_load_round_trip(tmp_path, rng):
         np.testing.assert_array_equal(back[k], arrays[k])
 
 
-# --- дописано для крестиков-ноликов: tanh, flatten, последовательность, mse ---
+# --- tanh, flatten, последовательность, mse ---
 
 
 def test_tanh_gradients(rng):

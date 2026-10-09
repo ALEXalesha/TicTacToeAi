@@ -8,8 +8,8 @@ import json
 
 import numpy as np
 
-from core import rules
-from nn import io, layers
+from aikit.nn import io, layers
+from game.core import rules
 
 
 # --- симметрии поля: 4 поворота и 4 поворота отражённого ---

@@ -1,21 +1,26 @@
 """Партия человека против сети - без окна, чтобы проверять её тестами.
 
 Кто за X: first = 'me' - человек, 'net' - сеть, 'alternate' - по очереди, начиная с
-человека. X всегда ходит первым. Конец партии пишется в статистику ровно один раз.
+человека. X всегда ходит первым. Конец партии пишется в статистику ровно один раз:
+stats - aikit.stats.Stats (ctx.stats), ключ - stats_key(поле, уровень), запись сразу в файл.
 """
 import numpy as np
 
-from core import net, rules
+from game.ai import net
+from game.core import rules
+
+
+def stats_key(size, level):
+    return f"{size}x{size}/{level}"
 
 
 class Session:
-    def __init__(self, size, level, model, first="me", stats=None, stats_path=None):
+    def __init__(self, size, level, model, first="me", stats=None):
         self.size = size
         self.level = level
         self.model = model
         self.first = first
         self.stats = stats
-        self.stats_path = stats_path
         self.round = 0
         self.new_game()
 
@@ -85,6 +90,4 @@ class Session:
         if self.recorded or self.result is None or self.stats is None:
             return
         self.recorded = True
-        self.stats.record(self.size, self.level, self.outcome_for_human())
-        if self.stats_path is not None:
-            self.stats.save(self.stats_path)
+        self.stats.record(stats_key(self.size, self.level), self.outcome_for_human())

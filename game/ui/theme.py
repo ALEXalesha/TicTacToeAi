@@ -30,7 +30,7 @@ def qss(name):
     font-size: 14px;
     color: {p['text']};
 }}
-QMainWindow, QWidget#page, QScrollArea, QScrollArea > QWidget > QWidget#page {{
+QMainWindow, QWidget#gameRoot, QWidget#page, QScrollArea, QScrollArea > QWidget > QWidget#page {{
     background: {p['bg']};
 }}
 QScrollArea {{ border: none; }}

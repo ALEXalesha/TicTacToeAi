@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 
-from game.storage import load_json, save_json
+from aikit.storage import load_json, save_json
 
 # Сколько окна должно остаться на экране, чтобы за него можно было взяться: полоса
 # заголовка высотой 38 и хотя бы 80 по ширине.

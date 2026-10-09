@@ -1,4 +1,7 @@
+"""Окно отдельного запуска (main.open_window) и виджет игры в нём: win - виджет игры
+(GameWidget), host - окно вокруг него."""
 import json
+import os
 
 import numpy as np
 import pytest
@@ -6,9 +9,8 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel
 
-import paths
-from game import app as app_module
-from game import theme
+import main
+from game.ui import theme
 
 
 def pump(until, timeout=5000):
@@ -20,12 +22,21 @@ def pump(until, timeout=5000):
 
 
 @pytest.fixture
-def win(qapp):
-    w = app_module.MainWindow()
-    w.change_setting("delay_ms", 0)
-    w.show()
-    yield w
-    w.close()
+def host(qapp):
+    window, _ = main.open_window()
+    window.game.change_setting("delay_ms", 0)
+    window.show()
+    yield window
+    window.close()
+
+
+@pytest.fixture
+def win(host):
+    return host.game
+
+
+def data_file(win, name):
+    return os.path.join(win.ctx.data_dir, name)
 
 
 def click_cell(w, r, c):
@@ -44,7 +55,7 @@ def distinct_colors(image, step=7):
 
 @pytest.mark.parametrize("theme_name", ["dark", "light"])
 def test_every_page_draws_in_both_themes(win, theme_name):
-    win.change_setting("theme", theme_name)
+    win.ctx.set_theme(theme_name)
     bg = theme.palette(theme_name)["bg"].lstrip("#")
     for name in ("menu", "game", "stats", "settings"):
         win.show_page(name)
@@ -77,7 +88,7 @@ def test_full_game_with_the_mouse_is_recorded(win):
         r, c = [int(v) for v in np.argwhere(s.board == 0)[0]]
         click_cell(win, r, c)
     assert game.status.text() in ("Победа!", "Поражение", "Ничья")
-    stats = json.loads(open(paths.user_file("stats.json"), encoding="utf-8").read())
+    stats = json.loads(open(data_file(win, "stats.json"), encoding="utf-8").read())
     assert stats[f"3x3/{s.level}"]["games"] == 1
 
 
@@ -123,7 +134,7 @@ def test_size_and_level_buttons_start_a_new_game(win):
     assert win.game.session.size == 5 and win.game.session.board.shape == (5, 5)
     QTest.mouseClick(win.game.level_buttons["novice"], Qt.MouseButton.LeftButton)
     assert win.game.session.level == "novice"
-    saved = json.loads(open(paths.user_file("settings.json"), encoding="utf-8").read())
+    saved = json.loads(open(data_file(win, "settings.json"), encoding="utf-8").read())
     assert saved["size"] == 5 and saved["level"] == "novice"
 
 
@@ -144,15 +155,18 @@ def test_settings_are_saved_at_once(win):
     page.thoughts.setChecked(True)
     page.first_combo.setCurrentIndex(2)
     page.theme_combo.setCurrentIndex(1)
-    saved = json.loads(open(paths.user_file("settings.json"), encoding="utf-8").read())
-    assert saved["volume"] == 33 and saved["delay_ms"] == 800 and saved["show_thoughts"] is True
-    assert saved["first"] == "alternate" and saved["theme"] == "light"
+    saved = json.loads(open(data_file(win, "settings.json"), encoding="utf-8").read())
+    assert saved["delay_ms"] == 800 and saved["show_thoughts"] is True and saved["first"] == "alternate"
+    # тема и громкость - общие: в ctx и в host.json окна отдельного запуска
+    host = json.loads(open(os.path.join(os.environ["TICTACTOEAI_HOME"], "host.json"), encoding="utf-8").read())
+    assert host["volume"] == 33 and host["theme"] == "light"
+    assert win.ctx.theme == "light" and win.ctx.sound.volume == 33
     assert theme.palette("light")["bg"] in win.styleSheet()
     assert win.sounds.volume == 33
 
 
 def test_stats_page_shows_recorded_games(win):
-    win.stats.record(5, "medium", "win")
+    win.stats.record("5x5/medium", "win")
     win.show_page("stats")
     table = win.stats_page.table
     texts = [table.item(r, c).text() for r in range(table.rowCount()) for c in range(table.columnCount())
@@ -172,9 +186,9 @@ def test_stats_page_shows_curve_and_checks_for_both_fields(win):
 
 
 def test_window_place_is_saved_on_close(qapp):
-    from game import window_state
+    from aikit import window_state
 
-    w = app_module.MainWindow()
+    w, _ = main.open_window()
     w.show()
     # экран offscreen маленький (800x600): окно минимального размера и место, где оно
     # влезает целиком, - иначе правило места законно его подвинет
@@ -186,27 +200,27 @@ def test_window_place_is_saved_on_close(qapp):
     w.move(x, y)
     qapp.processEvents()
     w.close()
-    saved = json.loads(open(paths.user_file("window.json"), encoding="utf-8").read())
+    saved = json.loads(open(os.path.join(os.environ["TICTACTOEAI_HOME"], "window.json"), encoding="utf-8").read())
     assert (saved["x"], saved["y"], saved["width"], saved["height"]) == (x, y, width, height)
-    w2 = app_module.MainWindow()
+    w2, _ = main.open_window()
     w2.show()
     assert (w2.x(), w2.y(), w2.width(), w2.height()) == (x, y, width, height)
     w2.close()
 
 
 def test_window_is_never_smaller_than_the_game_panel(qapp):
-    w = app_module.MainWindow()
+    w, _ = main.open_window()
     w.show()
     w.resize(100, 100)
-    w.show_page("game")
+    w.game.show_page("game")
     qapp.processEvents()
-    need = w.game.minimumSizeHint()
-    assert w.game.width() >= need.width() and w.game.height() >= need.height()
+    need = w.game.game.minimumSizeHint()
+    assert w.game.game.width() >= need.width() and w.game.game.height() >= need.height()
     w.close()
 
 
 def test_window_fits_a_1024x768_screen(qapp):
-    w = app_module.MainWindow()
+    w, _ = main.open_window()
     # экран 1024x768 минус панель задач и заголовок окна
     assert w.minimumWidth() <= 1000 and w.minimumHeight() <= 690
     w.close()
@@ -221,8 +235,8 @@ def test_mark_drawn_where_clicked(win):
     board = win.game.board_widget
     image = board.grab().toImage()
     center = board.cell_rect(2, 2).center().toPoint()
-    assert image.pixelColor(center).name() == theme.palette(win.settings.theme)["x"]
-    assert image.pixelColor(QPoint(3, 3)).name() != theme.palette(win.settings.theme)["x"]
+    assert image.pixelColor(center).name() == theme.palette(win.ctx.theme)["x"]
+    assert image.pixelColor(QPoint(3, 3)).name() != theme.palette(win.ctx.theme)["x"]
 
 
 # Закон: подпись с переносом строк не ограничена по высоте и помещается целиком. Нашёл
@@ -249,17 +263,17 @@ def test_wrapping_labels_are_never_capped_in_height(win):
 @pytest.mark.parametrize("scale", [1.0, 1.1])
 def test_game_panel_text_fits_at_minimum_window_size(qapp, size, scale):
     """Шрифт на 10% крупнее - «текст на настоящем экране шире, чем в offscreen»."""
-    w = app_module.MainWindow()
+    w, _ = main.open_window()
     w.show()
-    w.show_page("game")
-    w.game.set_size(size)
+    w.game.show_page("game")
+    w.game.game.set_size(size)
     qapp.processEvents()
-    for lb in w.game.findChildren(QLabel):
+    for lb in w.game.game.findChildren(QLabel):
         px = lb.font().pixelSize() if lb.font().pixelSize() > 0 else round(lb.font().pointSizeF() * 96 / 72)
         lb.setStyleSheet(f"font-size: {round(px * scale)}px;")
     w.resize(w.minimumSize())
     QTest.qWait(30)
-    clipped = [(lb.text(), lb.height(), lb.heightForWidth(lb.width())) for lb in wrapped_labels(w.game)
+    clipped = [(lb.text(), lb.height(), lb.heightForWidth(lb.width())) for lb in wrapped_labels(w.game.game)
                if lb.heightForWidth(lb.width()) > lb.height()]
     w.close()
     assert clipped == []

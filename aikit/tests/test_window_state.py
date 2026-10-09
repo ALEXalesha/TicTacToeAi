@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from game import window_state as ws
+from aikit import window_state as ws
 
 AREAS = [{"x": 0, "y": 0, "width": 1920, "height": 1040}]
 OPTS = {"width": 900, "height": 700, "minWidth": 640, "minHeight": 560}

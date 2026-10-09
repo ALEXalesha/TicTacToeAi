@@ -6,7 +6,7 @@ from functools import lru_cache
 
 import numpy as np
 
-from core import rules
+from game.core import rules
 
 
 class RandomBot:

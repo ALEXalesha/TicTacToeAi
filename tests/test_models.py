@@ -4,9 +4,9 @@
 обучения, и должны совпасть с паспортом до партии."""
 import pytest
 
-from core import rules
-from game import models
-from train import selfplay
+from game.core import rules
+from game.ai import models
+from game.train import selfplay
 
 LEVELS = ("novice", "medium", "strong")
 

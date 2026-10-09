@@ -1,7 +1,7 @@
 """Обучение сети самоигрой: с нуля, только по исходам партий.
 
-    python -m train.selfplay --size 3
-    python -m train.selfplay --size 5
+    python -m game.train.selfplay --size 3
+    python -m game.train.selfplay --size 5
 
 Сеть играет сама с собой пачкой партий сразу (все ходы-кандидаты всех партий - один
 проход сети), с долей случайных ходов ε от 0.3 к 0.05. После пачки каждая позиция
@@ -10,7 +10,7 @@
 
 По ходу обучения сохраняются снимки уровней («новичок», «средний», «сильный» - конец),
 каждый проверяется против ботов; итоги и кривая обучения пишутся в паспорт
-models/<поле>.json, веса - в models/<поле>-<уровень>.npz.
+game/models/<поле>.json, веса - в game/models/<поле>-<уровень>.npz.
 """
 import os
 
@@ -21,17 +21,15 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
 
 import argparse  # noqa: E402
 import json  # noqa: E402
-import sys  # noqa: E402
 import time  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import numpy as np  # noqa: E402
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core import bots, net, rules  # noqa: E402
-from nn import losses  # noqa: E402
-from nn.optim import Adam  # noqa: E402
+from aikit.nn import losses  # noqa: E402
+from aikit.nn.optim import Adam  # noqa: E402
+from game.ai import net  # noqa: E402
+from game.core import bots, rules  # noqa: E402
 
 LEVEL_NAMES = {"novice": "новичок", "medium": "средний", "strong": "сильный"}
 

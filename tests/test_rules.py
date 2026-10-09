@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core import rules
+from game.core import rules
 
 
 def board_from(text):

@@ -3,12 +3,14 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from game import theme
+from game.ui import theme
+from game.ui.i18n import translator
 
 
-def games_label(g):
+def games_label(g, t=None):
+    t = t or translator("ru")
     if g >= 1000:
-        return f"{g / 1000:g} тыс."
+        return t("thousands", n=g / 1000)
     return str(g)
 
 
@@ -18,6 +20,7 @@ class CurveChart(QWidget):
         self.curve = []
         self.marks = []          # [(партий, подпись)] - где сняты уровни
         self.colors = theme.palette("dark")
+        self.t = translator("ru")
         self.setMinimumHeight(260)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -30,9 +33,13 @@ class CurveChart(QWidget):
         self.colors = theme.palette(name)
         self.update()
 
+    def set_lang(self, lang):
+        self.t = translator(lang)
+        self.update()
+
     def series(self):
-        return [("против случайного", "vs_random", self.colors["x"]),
-                ("против бота «выиграй или помешай»", "vs_bot", self.colors["o"])]
+        return [(self.t("vs_random"), "vs_random", self.colors["x"]),
+                (self.t("vs_bot"), "vs_bot", self.colors["o"])]
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -62,7 +69,7 @@ class CurveChart(QWidget):
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{i * 25}%")
         if not self.curve:
             p.setPen(QColor(col["muted"]))
-            p.drawText(plot, Qt.AlignmentFlag.AlignCenter, "нет данных")
+            p.drawText(plot, Qt.AlignmentFlag.AlignCenter, self.t("no_data"))
             p.end()
             return
 
@@ -87,9 +94,9 @@ class CurveChart(QWidget):
             g = last * i / 4
             pt = at(g, 0)
             p.drawText(QRectF(pt.x() - 40, plot.bottom() + 6, 80, 16), Qt.AlignmentFlag.AlignCenter,
-                       games_label(round(g)))
+                       games_label(round(g), self.t))
         p.drawText(QRectF(plot.left(), plot.bottom() + 24, plot.width(), 18), Qt.AlignmentFlag.AlignCenter,
-                   "партий самоигры")
+                   self.t("selfplay_games"))
 
         for _, keyname, color in self.series():
             path = QPainterPath()

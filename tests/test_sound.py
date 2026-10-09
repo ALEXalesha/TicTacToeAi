@@ -4,7 +4,7 @@ import wave
 import numpy as np
 import pytest
 
-from game import sound
+from game.ui import sound
 
 
 @pytest.mark.parametrize("name", sound.NAMES)

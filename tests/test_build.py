@@ -15,7 +15,7 @@ def nsi():
 
 
 def test_version_is_the_same_in_the_game_and_the_installer():
-    assert build.version() == VERSION == "1.0.1"
+    assert build.version() == VERSION == "1.1.0"
 
 
 def test_installer_registers_under_the_app_name_in_russian():
@@ -34,7 +34,7 @@ def test_models_are_packed_into_the_build():
     assert "models" in open(os.path.join(ROOT, "build.py"), encoding="utf-8").read()
     for size in (3, 5):
         for level in ("novice", "medium", "strong"):
-            assert os.path.exists(os.path.join(ROOT, "models", f"{size}x{size}-{level}.npz"))
+            assert os.path.exists(os.path.join(ROOT, "game", "models", f"{size}x{size}-{level}.npz"))
 
 
 def test_icon_is_drawn_in_every_size(tmp_path, qapp):

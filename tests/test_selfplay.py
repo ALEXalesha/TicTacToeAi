@@ -3,8 +3,9 @@ import json
 import numpy as np
 import pytest
 
-from core import bots, net, rules
-from train import selfplay
+from game.ai import net
+from game.core import bots, rules
+from game.train import selfplay
 
 
 def one_game(outcome_last, moves, backups=None, explored=None):
