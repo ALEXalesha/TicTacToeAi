@@ -14,6 +14,9 @@
 
 </div>
 
+[![Built with Claude Code](https://img.shields.io/badge/Built_with-Claude_Code-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
+Код, тесты и документация этого проекта написаны Claude (Anthropic) в Claude Code. Идеи, проверка и решения - Алексей.
+
 Два поля:
 
 - **3×3, три в ряд** - обычные крестики-нолики. Сильная сеть здесь не проигрывает никогда: это проверено полным перебором всех ходов соперника.
